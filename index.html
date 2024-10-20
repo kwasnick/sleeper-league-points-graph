@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Cumulative Adjusted Points Compared to League Average</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body { margin: 0; padding: 20px; font-family: Arial, sans-serif; }
+        #graph { width: 100%; height: 80vh; }
+        #controls { margin-bottom: 20px; }
+        #controls input { margin-right: 10px; }
+        #loading { display: none; font-size: 18px; }
+    </style>
+</head>
+<body>
+    <h1>Cumulative Adjusted Points Compared to League Average</h1>
+    <div id="controls">
+        <label for="leagueID">League ID:</label>
+        <input type="text" id="leagueID" placeholder="Enter League ID" required>
+        <button id="generateBtn">Generate Graph</button>
+        <span id="loading">Loading data and generating graph...</span>
+    </div>
+    <div id="graph"></div>
+
+    <script>
+        // Parse URL parameters
+        function getUrlParams() {
+            const params = {};
+            window.location.search.substring(1).split('&').forEach(pair => {
+                const [key, value] = pair.split('=');
+                if (key) {
+                    params[decodeURIComponent(key)] = decodeURIComponent(value || '');
+                }
+            });
+            return params;
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const params = getUrlParams();
+            const leagueIDInput = document.getElementById('leagueID');
+            const generateBtn = document.getElementById('generateBtn');
+
+            if (params.leagueID) {
+                leagueIDInput.value = params.leagueID;
+                generateBtn.click();
+            }
+        });
+
+        document.getElementById('generateBtn').addEventListener('click', function() {
+            const leagueID = document.getElementById('leagueID').value.trim();
+
+            if (!leagueID) {
+                alert('Please enter a valid League ID.');
+                return;
+            }
+
+            generateGraph(leagueID);
+        });
+
+        async function generateGraph(leagueID) {
+            try {
+                document.getElementById('loading').style.display = 'inline';
+                const apiBase = `https://api.sleeper.app/v1/league/${leagueID}`;
+
+                // Fetch the current NFL week from the NFL state API
+                const nflState = await getJSON('https://api.sleeper.app/v1/state/nfl');
+
+                if (!nflState || !nflState.week) {
+                    alert('Unable to fetch current NFL week.');
+                    document.getElementById('loading').style.display = 'none';
+                    return;
+                }
+
+                let numWeeks = nflState.week - 1; // Assuming the last completed week is current week - 1
+
+                // If the season hasn't started yet
+                if (numWeeks <= 0) {
+                    alert('No weeks have been completed yet.');
+                    document.getElementById('loading').style.display = 'none';
+                    return;
+                }
+
+                const teamsAndPoints = await getTeamsAndPoints(leagueID, numWeeks);
+                const numTeams = teamsAndPoints.length;
+
+                // Calculate league averages per week
+                const leagueAvgPerWeek = [0];
+                for (let week = 1; week <= numWeeks; week++) {
+                    let totalPointsThisWeek = 0;
+                    teamsAndPoints.forEach(tp => {
+                        totalPointsThisWeek += tp.points[week] || 0;
+                    });
+                    leagueAvgPerWeek[week] = totalPointsThisWeek / numTeams;
+                }
+
+                // Calculate cumulative adjusted points and cumulative total points
+                const cumulativeAdjPoints = [];
+                const cumulativeTotalPoints = [];
+                for (let i = 0; i < numTeams; i++) {
+                    cumulativeAdjPoints[i] = [0];
+                    cumulativeTotalPoints[i] = [0];
+                }
+
+                for (let week = 1; week <= numWeeks; week++) {
+                    for (let i = 0; i < numTeams; i++) {
+                        const tp = teamsAndPoints[i];
+                        const pointsThisWeek = tp.points[week] || 0;
+                        cumulativeTotalPoints[i][week] = cumulativeTotalPoints[i][week - 1] + pointsThisWeek;
+                        const adjPoint = pointsThisWeek - (leagueAvgPerWeek[week] || 0);
+                        cumulativeAdjPoints[i][week] = cumulativeAdjPoints[i][week - 1] + adjPoint;
+                    }
+                }
+
+                // Build records (e.g., 5-3)
+                const records = [];
+                for (let i = 0; i < numTeams; i++) {
+                    records[i] = ['0-0'];
+                    let cumWins = 0;
+                    for (let week = 1; week <= numWeeks; week++) {
+                        cumWins += teamsAndPoints[i].wins[week] || 0;
+                        const cumLosses = week - cumWins;
+                        records[i][week] = `${cumWins}-${cumLosses}`;
+                    }
+                }
+
+                const teamNames = teamsAndPoints.map(tp => tp.name);
+
+                // Sort teams based on cumulative adjusted points at the last week
+                const sortRosterNums = cumulativeAdjPoints.map((points, index) => ({
+                    index,
+                    points: points[numWeeks] || 0
+                })).sort((a, b) => b.points - a.points);
+
+                const order = sortRosterNums.map(srn => srn.index);
+
+                // Build and render the graph
+                buildAndRenderGraph(cumulativeAdjPoints, cumulativeTotalPoints, records, teamNames, order, numWeeks);
+
+            } catch (error) {
+                console.error(error);
+                alert('An error occurred while generating the graph. Please check the console for details.');
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        async function getTeamsAndPoints(leagueID, numWeeks) {
+            const apiBase = `https://api.sleeper.app/v1/league/${leagueID}`;
+
+            const users = await getJSON(`${apiBase}/users`);
+            const usersMap = {};
+            users.forEach(user => {
+                usersMap[user.user_id] = user;
+            });
+
+            const rosters = await getJSON(`${apiBase}/rosters`);
+
+            const teamsAndPoints = [];
+            const rosterIDToIndex = {};
+            rosters.forEach((roster, i) => {
+                const owner = usersMap[roster.owner_id];
+                teamsAndPoints[i] = {
+                    name: getUserName(owner),
+                    rosterID: roster.roster_id,
+                    points: [],
+                    wins: []
+                };
+                rosterIDToIndex[roster.roster_id] = i;
+            });
+
+            for (let week = 1; week <= numWeeks; week++) {
+                const matchups = await getJSON(`${apiBase}/matchups/${week}`);
+                const matchupMap = {};
+
+                if (!matchups) continue;
+
+                matchups.forEach(m => {
+                    if (!matchupMap[m.matchup_id]) {
+                        matchupMap[m.matchup_id] = [];
+                    }
+                    matchupMap[m.matchup_id].push(m);
+                });
+
+                Object.values(matchupMap).forEach(matchupPair => {
+                    if (matchupPair.length !== 2) return;
+
+                    const [m1, m2] = matchupPair;
+                    const index1 = rosterIDToIndex[m1.roster_id];
+                    const index2 = rosterIDToIndex[m2.roster_id];
+
+                    if (index1 === undefined || index2 === undefined) return;
+
+                    teamsAndPoints[index1].points[week] = m1.points;
+                    teamsAndPoints[index2].points[week] = m2.points;
+
+                    teamsAndPoints[index1].wins[week] = m1.points > m2.points ? 1 : 0;
+                    teamsAndPoints[index2].wins[week] = m2.points > m1.points ? 1 : 0;
+                });
+            }
+
+            return teamsAndPoints;
+        }
+
+        function getUserName(user) {
+            if (user.metadata && user.metadata.team_name) {
+                return user.metadata.team_name;
+            }
+            if (user.display_name) {
+                return user.display_name;
+            }
+            return user.username;
+        }
+
+        async function getJSON(url) {
+            try {
+                const response = await fetch(url);
+                if (response.status === 404) {
+                    return null; // No data for this week
+                }
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch ${url}: ${response.statusText}`);
+                }
+                return response.json();
+            } catch (error) {
+                console.error(`Error fetching ${url}:`, error);
+                throw error;
+            }
+        }
+
+        function buildAndRenderGraph(cumulativeAdjPoints, cumulativeTotalPoints, records, teamNames, order, numWeeks) {
+            const traces = [];
+
+            const x = [];
+            for (let i = 0; i <= numWeeks; i++) {
+                x.push(i);
+            }
+
+            // Add league average line at y=0
+            const traceAvg = {
+                x: [0, numWeeks],
+                y: [0, 0],
+                name: "League Average",
+                mode: "lines",
+                line: {
+                    color: "black",
+                    width: 4,
+                    dash: "dash"
+                },
+                hoverinfo: "skip"
+            };
+            traces.push(traceAvg);
+
+            order.forEach(idx => {
+                const y = cumulativeAdjPoints[idx];
+                const totalPoints = cumulativeTotalPoints[idx];
+                const labels = records[idx];
+
+                const hovertexts = [];
+                for (let i = 0; i <= numWeeks; i++) {
+                    hovertexts[i] = `<b>${teamNames[idx]}</b><br>Week: ${x[i]}<br>Cumulative Adjusted Points: ${y[i]?.toFixed(2)}<br>Total Points: ${totalPoints[i]?.toFixed(2)}<br>Record: ${labels[i]}`;
+                }
+
+                const trace = {
+                    x: x,
+                    y: y,
+                    name: teamNames[idx],
+                    mode: "lines+markers+text",
+                    text: labels,
+                    textposition: "top center",
+                    textfont: { size: 10 },
+                    hoverinfo: "text",
+                    hovertext: hovertexts,
+                    visible: true,
+                    line: {
+                        shape: "spline",
+                        smoothing: 1.3,
+                        width: 3
+                    }
+                };
+                traces.push(trace);
+            });
+
+            const layout = {
+                title: 'Cumulative Adjusted Points Compared to League Average',
+                xaxis: { title: 'Week', dtick: 1 },
+                yaxis: { title: 'Cumulative Adjusted Points' },
+                hovermode: 'closest',
+                showlegend: true
+            };
+
+            const config = {
+                responsive: true,
+                displayModeBar: true
+            };
+
+            Plotly.newPlot('graph', traces, layout, config);
+
+            const graphDiv = document.getElementById('graph');
+
+            graphDiv.on('plotly_hover', function(data){
+                const idx = data.points[0].curveNumber;
+                const update = {
+                    'opacity': []
+                };
+                for (let i = 0; i < graphDiv.data.length; i++) {
+                    if (graphDiv.data[i].name === 'League Average') {
+                        update.opacity.push(1); // Keep league average line visible
+                    } else if (i === idx) {
+                        update.opacity.push(1); // Highlight hovered trace
+                    } else {
+                        update.opacity.push(0.2); // Fade other traces
+                    }
+                }
+                Plotly.restyle(graphDiv, update);
+            });
+
+            graphDiv.on('plotly_unhover', function(data){
+                const update = {
+                    'opacity': []
+                };
+                for (let i = 0; i < graphDiv.data.length; i++) {
+                    update.opacity.push(1); // Reset opacity
+                }
+                Plotly.restyle(graphDiv, update);
+            });
+        }
+    </script>
+</body>
+</html>
