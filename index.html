@@ -309,7 +309,8 @@
                     x: 0,
                     y: -0.2
                 },
-                margin: { t: 50, b: 80, l: 50, r: 30 }
+                margin: { t: 50, b: 80, l: 50, r: 30 },
+                dragmode: 'pan' // Set default tool to 'pan' mode
             };
 
             const config = {
@@ -353,14 +354,18 @@
             // Add zoom controls for mobile devices
             document.getElementById('zoom-in').addEventListener('click', function() {
                 Plotly.relayout('graph', {
-                    'xaxis.range': [x[0], x[numWeeks] * 0.8],
+                    'xaxis.autorange': false,
+                    'xaxis.range[0]': x[0],
+                    'xaxis.range[1]': x[numWeeks] * 0.8,
                     'yaxis.autorange': true
                 });
             });
 
             document.getElementById('zoom-out').addEventListener('click', function() {
                 Plotly.relayout('graph', {
-                    'xaxis.range': [x[0], x[numWeeks] * 1.2],
+                    'xaxis.autorange': false,
+                    'xaxis.range[0]': x[0],
+                    'xaxis.range[1]': x[numWeeks] * 1.2,
                     'yaxis.autorange': true
                 });
             });
