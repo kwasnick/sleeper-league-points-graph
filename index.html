@@ -34,6 +34,7 @@
         <button id="zoom-in">Zoom In</button>
         <button id="zoom-out">Zoom Out</button>
         <button id="reset-zoom">Reset Zoom</button>
+        <button id="reset-highlight">Reset Highlights</button>
     </div>
 
     <script>
@@ -260,7 +261,9 @@
                     width: 4,
                     dash: "dash"
                 },
-                hoverinfo: "skip"
+                hoverinfo: "skip",
+                legendgroup: "League Average",
+                opacity: 1
             };
             traces.push(traceAvg);
 
@@ -285,6 +288,7 @@
                     hoverinfo: "text",
                     hovertext: hovertexts,
                     visible: true,
+                    legendgroup: teamNames[idx],
                     line: {
                         shape: "spline",
                         smoothing: 1.3,
@@ -292,7 +296,8 @@
                     },
                     marker: {
                         size: 8
-                    }
+                    },
+                    opacity: 1
                 };
                 traces.push(trace);
             });
@@ -324,34 +329,74 @@
 
             const graphDiv = document.getElementById('graph');
 
-            graphDiv.on('plotly_hover', function(data){
+            // Variables to keep track of highlighted trace
+            let highlightedTrace = null;
+
+            graphDiv.on('plotly_click', function(data) {
                 const idx = data.points[0].curveNumber;
-                const update = {
-                    'opacity': []
-                };
-                for (let i = 0; i < graphDiv.data.length; i++) {
-                    if (graphDiv.data[i].name === 'League Average') {
-                        update.opacity.push(1); // Keep league average line visible
-                    } else if (i === idx) {
-                        update.opacity.push(1); // Highlight hovered trace
-                    } else {
-                        update.opacity.push(0.2); // Fade other traces
-                    }
+                const clickedTraceName = graphDiv.data[idx].name;
+
+                if (clickedTraceName === 'League Average') return;
+
+                if (highlightedTrace === idx) {
+                    // Reset opacities
+                    resetOpacities();
+                    highlightedTrace = null;
+                } else {
+                    // Highlight selected trace and fade others
+                    const update = {
+                        'opacity': graphDiv.data.map((trace, i) => {
+                            if (trace.name === 'League Average') {
+                                return 1;
+                            }
+                            return i === idx ? 1 : 0.2;
+                        })
+                    };
+                    Plotly.restyle(graphDiv, update);
+                    highlightedTrace = idx;
                 }
-                Plotly.restyle(graphDiv, update);
             });
 
-            graphDiv.on('plotly_unhover', function(data){
-                const update = {
-                    'opacity': []
-                };
-                for (let i = 0; i < graphDiv.data.length; i++) {
-                    update.opacity.push(1); // Reset opacity
+            // Legend click handler
+            graphDiv.on('plotly_legendclick', function(event) {
+                const traceName = event.curveNumber;
+                const idx = event.curveNumber;
+
+                if (graphDiv.data[idx].name === 'League Average') {
+                    return false; // Prevent hiding the league average line
                 }
-                Plotly.restyle(graphDiv, update);
+
+                if (highlightedTrace === idx) {
+                    resetOpacities();
+                    highlightedTrace = null;
+                } else {
+                    const update = {
+                        'opacity': graphDiv.data.map((trace, i) => {
+                            if (trace.name === 'League Average') {
+                                return 1;
+                            }
+                            return i === idx ? 1 : 0.2;
+                        })
+                    };
+                    Plotly.restyle(graphDiv, update);
+                    highlightedTrace = idx;
+                }
+                return false; // Prevent default legend click behavior
             });
 
-            // Add zoom controls for mobile devices
+            document.getElementById('reset-highlight').addEventListener('click', function() {
+                resetOpacities();
+                highlightedTrace = null;
+            });
+
+            function resetOpacities() {
+                const update = {
+                    'opacity': graphDiv.data.map(() => 1)
+                };
+                Plotly.restyle(graphDiv, update);
+            }
+
+            // Zoom controls
             document.getElementById('zoom-in').addEventListener('click', function() {
                 Plotly.relayout('graph', {
                     'xaxis.autorange': false,
