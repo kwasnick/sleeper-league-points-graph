@@ -284,7 +284,11 @@
                     mode: "lines+markers+text",
                     text: labels,
                     textposition: "top center",
-                    textfont: { size: 12 },
+                    textfont: {
+                        size: 12,
+                        color: 'black',
+                        family: 'Arial, sans-serif'
+                    },
                     hoverinfo: "text",
                     hovertext: hovertexts,
                     visible: true,
@@ -339,19 +343,35 @@
                 if (clickedTraceName === 'League Average') return;
 
                 if (highlightedTrace === idx) {
-                    // Reset opacities
-                    resetOpacities();
+                    // Reset opacities and textfont
+                    resetOpacitiesAndTextfont();
                     highlightedTrace = null;
                 } else {
                     // Highlight selected trace and fade others
                     const update = {
-                        'opacity': graphDiv.data.map((trace, i) => {
-                            if (trace.name === 'League Average') {
-                                return 1;
-                            }
-                            return i === idx ? 1 : 0.2;
-                        })
+                        'opacity': [],
+                        'textfont.size': [],
+                        'textfont.color': [],
+                        'textfont.family': []
                     };
+                    graphDiv.data.forEach((trace, i) => {
+                        if (trace.name === 'League Average') {
+                            update['opacity'].push(1);
+                            update['textfont.size'].push(null);
+                            update['textfont.color'].push(null);
+                            update['textfont.family'].push(null);
+                        } else if (i === idx) {
+                            update['opacity'].push(1);
+                            update['textfont.size'].push(16);
+                            update['textfont.color'].push('black');
+                            update['textfont.family'].push('Arial Black, Arial, sans-serif');
+                        } else {
+                            update['opacity'].push(0.2);
+                            update['textfont.size'].push(12);
+                            update['textfont.color'].push('gray');
+                            update['textfont.family'].push('Arial, sans-serif');
+                        }
+                    });
                     Plotly.restyle(graphDiv, update);
                     highlightedTrace = idx;
                 }
@@ -359,7 +379,6 @@
 
             // Legend click handler
             graphDiv.on('plotly_legendclick', function(event) {
-                const traceName = event.curveNumber;
                 const idx = event.curveNumber;
 
                 if (graphDiv.data[idx].name === 'League Average') {
@@ -367,17 +386,33 @@
                 }
 
                 if (highlightedTrace === idx) {
-                    resetOpacities();
+                    resetOpacitiesAndTextfont();
                     highlightedTrace = null;
                 } else {
                     const update = {
-                        'opacity': graphDiv.data.map((trace, i) => {
-                            if (trace.name === 'League Average') {
-                                return 1;
-                            }
-                            return i === idx ? 1 : 0.2;
-                        })
+                        'opacity': [],
+                        'textfont.size': [],
+                        'textfont.color': [],
+                        'textfont.family': []
                     };
+                    graphDiv.data.forEach((trace, i) => {
+                        if (trace.name === 'League Average') {
+                            update['opacity'].push(1);
+                            update['textfont.size'].push(null);
+                            update['textfont.color'].push(null);
+                            update['textfont.family'].push(null);
+                        } else if (i === idx) {
+                            update['opacity'].push(1);
+                            update['textfont.size'].push(16);
+                            update['textfont.color'].push('black');
+                            update['textfont.family'].push('Arial Black, Arial, sans-serif');
+                        } else {
+                            update['opacity'].push(0.2);
+                            update['textfont.size'].push(12);
+                            update['textfont.color'].push('gray');
+                            update['textfont.family'].push('Arial, sans-serif');
+                        }
+                    });
                     Plotly.restyle(graphDiv, update);
                     highlightedTrace = idx;
                 }
@@ -385,14 +420,29 @@
             });
 
             document.getElementById('reset-highlight').addEventListener('click', function() {
-                resetOpacities();
+                resetOpacitiesAndTextfont();
                 highlightedTrace = null;
             });
 
-            function resetOpacities() {
+            function resetOpacitiesAndTextfont() {
                 const update = {
-                    'opacity': graphDiv.data.map(() => 1)
+                    'opacity': [],
+                    'textfont.size': [],
+                    'textfont.color': [],
+                    'textfont.family': []
                 };
+                graphDiv.data.forEach((trace, i) => {
+                    update['opacity'].push(1);
+                    if (trace.name === 'League Average') {
+                        update['textfont.size'].push(null);
+                        update['textfont.color'].push(null);
+                        update['textfont.family'].push(null);
+                    } else {
+                        update['textfont.size'].push(12);
+                        update['textfont.color'].push('black');
+                        update['textfont.family'].push('Arial, sans-serif');
+                    }
+                });
                 Plotly.restyle(graphDiv, update);
             }
 
